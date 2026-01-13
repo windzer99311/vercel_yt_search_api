@@ -32,6 +32,8 @@ def search_engine(query):
                 video_id = res['videoId']
                 thumbnail_url = res['thumbnail']['thumbnails'][0]['url']
                 searched_data.append((title, f"https://www.youtube.com/watch?v={video_id}", thumbnail_url))
-        return searched_data
+        return {
+            "list": searched_data
+        }
 if __name__ == "__main__":
     uvicorn.run(app)
