@@ -1,4 +1,3 @@
-import uvicorn
 import requests
 import re
 import json
@@ -24,16 +23,17 @@ def search_engine(query):
         # Dig into the JSON layers to find the video list
         # Note: The path below is specific to how YouTube structures its data
         videos = data['contents']['twoColumnSearchResultsRenderer']['primaryContents']['sectionListRenderer']['contents'][0]['itemSectionRenderer']['contents']
-
         for video in videos:
             if 'videoRenderer' in video:
                 res = video['videoRenderer']
                 title = res['title']['runs'][0]['text']
                 video_id = res['videoId']
                 thumbnail_url = res['thumbnail']['thumbnails'][0]['url']
-                searched_data.append((title, f"https://www.youtube.com/watch?v={video_id}", thumbnail_url))
-        return {
-            "list": searched_data
-        }
+                searched_data.append({
+                    "title": title,
+                    "thumbnail": thumbnail_url,
+                    "url": f"https://www.youtube.com/watch?v={video_id}"
+                })
+        return {"results": searched_data}
 if __name__ == "__main__":
     uvicorn.run(app)
