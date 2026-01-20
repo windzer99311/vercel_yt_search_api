@@ -32,7 +32,7 @@ def search_engine(query):
                 searched_data.append({
                     "title": title,
                     "thumbnail": thumbnail_url,
-                    "url": f"https://www.youtube.com/watch?v={video_id}"
+                    "videoId": video_id
                 })
         return {"results": searched_data}
 if __name__ == "__main__":
