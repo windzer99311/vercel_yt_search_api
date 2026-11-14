@@ -1,4 +1,4 @@
 name = "vercel-yt-search-api"
 main = "main.py"
-compatibility_date = "2024-09-25"
+compatibility_date = "2025-11-01"
 compatibility_flags = ["python_workers"]
