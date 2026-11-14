@@ -1,60 +1,71 @@
 import json
-import re
-from bs4 import BeautifulSoup
+from urllib.parse import quote_plus
+
 from fastapi import FastAPI
+from pyodide.http import pyfetch
 from workers import WorkerEntrypoint
 import asgi
-import requests
 
 app = FastAPI()
 
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def extract_initial_data(html: str):
+    """Pull the ytInitialData JSON object out of the page without bs4/regex."""
+    marker = "ytInitialData"
+    pos = html.find(marker)
+    while pos != -1:
+        brace = html.find("{", pos)
+        eq = html.find("=", pos)
+        if eq != -1 and brace != -1 and eq < brace and brace - eq < 5:
+            try:
+                data, _ = json.JSONDecoder().raw_decode(html, brace)
+                return data
+            except json.JSONDecodeError:
+                pass
+        pos = html.find(marker, pos + 1)
+    return None
+
 
 @app.get("/search")
-def search_engine(query: str):
-  searched_data = []
-  search_url = f"https://www.youtube.com/results?search_query={query}"
-  headers = {
-      "User-Agent": (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-          " like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      )
-  }
-  response = requests.get(search_url, headers=headers)
-  soup = BeautifulSoup(response.text, "html.parser")
+async def search_engine(query: str):
+    url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+    response = await pyfetch(url, headers=HEADERS)
+    html = await response.string()
 
-  script_tag = soup.find("script", string=re.compile(r"ytInitialData"))
+    data = extract_initial_data(html)
+    results = []
+    if not data:
+        return {"results": results}
 
-  if script_tag:
-    match = re.search(r"ytInitialData\s*=\s*({.*?});", script_tag.string)
-    if match:
-      json_text = match.group(1)
-      data = json.loads(json_text)
-      try:
-        videos = (
-            data["contents"]["twoColumnSearchResultsRenderer"][
-                "primaryContents"
-            ]["sectionListRenderer"]["contents"][0]["itemSectionRenderer"][
-                "contents"
-            ]
-        )
-        for video in videos:
-          if "videoRenderer" in video:
-            res = video["videoRenderer"]
-            title = res["title"]["runs"][0]["text"]
-            video_id = res["videoId"]
-            thumbnail_url = res["thumbnail"]["thumbnails"][0]["url"]
-            searched_data.append({
-                "title": title,
-                "thumbnail": thumbnail_url,
-                "videoId": video_id,
-            })
-      except (KeyError, IndexError):
+    try:
+        sections = data["contents"]["twoColumnSearchResultsRenderer"][
+            "primaryContents"
+        ]["sectionListRenderer"]["contents"]
+        for section in sections:
+            items = section.get("itemSectionRenderer", {}).get("contents", [])
+            for item in items:
+                res = item.get("videoRenderer")
+                if not res:
+                    continue
+                results.append({
+                    "title": res["title"]["runs"][0]["text"],
+                    "thumbnail": res["thumbnail"]["thumbnails"][0]["url"],
+                    "videoId": res["videoId"],
+                })
+    except (KeyError, IndexError, TypeError):
         pass
 
-  return {"results": searched_data}
+    return {"results": results}
 
 
 class Default(WorkerEntrypoint):
-
-  async def fetch(self, request):
-    return await asgi.fetch(app, request.js_object, self.env)
+    async def fetch(self, request):
+        return await asgi.fetch(app, request.js_object, self.env)
