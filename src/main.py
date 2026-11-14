@@ -1,12 +1,8 @@
 import json
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse, parse_qs
 
-from fastapi import FastAPI
 from pyodide.http import pyfetch
-from workers import WorkerEntrypoint
-import asgi
-
-app = FastAPI()
+from workers import Response, WorkerEntrypoint
 
 HEADERS = {
     "User-Agent": (
@@ -17,8 +13,15 @@ HEADERS = {
 }
 
 
+def json_response(data, status=200):
+    return Response(
+        json.dumps(data),
+        status=status,
+        headers={"content-type": "application/json"},
+    )
+
+
 def extract_initial_data(html: str):
-    """Pull the ytInitialData JSON object out of the page without bs4/regex."""
     marker = "ytInitialData"
     pos = html.find(marker)
     while pos != -1:
@@ -34,8 +37,7 @@ def extract_initial_data(html: str):
     return None
 
 
-@app.get("/search")
-async def search_engine(query: str):
+async def search(query: str):
     url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
     response = await pyfetch(url, headers=HEADERS)
     html = await response.string()
@@ -43,7 +45,7 @@ async def search_engine(query: str):
     data = extract_initial_data(html)
     results = []
     if not data:
-        return {"results": results}
+        return results
 
     try:
         sections = data["contents"]["twoColumnSearchResultsRenderer"][
@@ -62,10 +64,17 @@ async def search_engine(query: str):
                 })
     except (KeyError, IndexError, TypeError):
         pass
-
-    return {"results": results}
+    return results
 
 
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
-        return await asgi.fetch(app, request.js_object, self.env)
+        parsed = urlparse(request.url)
+        if parsed.path != "/search":
+            return json_response({"error": "use /search?query=..."}, 404)
+
+        query = (parse_qs(parsed.query).get("query") or [""])[0].strip()
+        if not query:
+            return json_response({"error": "missing query parameter"}, 422)
+
+        return json_response({"results": await search(query)})
