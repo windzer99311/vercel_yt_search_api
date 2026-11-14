@@ -1,4 +1,2 @@
 fastapi
-requests
-bs4
-workers-py
+beautifulsoup4
